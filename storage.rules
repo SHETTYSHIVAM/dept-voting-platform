@@ -1,0 +1,13 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    match /candidates/{electionId}/{imageId} {
+      // Anyone authenticated from sode-edu can read candidate photos
+      allow read: if request.auth != null &&
+        request.auth.token.email.matches('.*@sode-edu\\.in$');
+      // Only admins can upload/delete candidate photos
+      allow write: if request.auth != null &&
+        firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+  }
+}
