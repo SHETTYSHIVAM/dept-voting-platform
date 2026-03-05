@@ -153,16 +153,28 @@ export function UnifiedElectionPage() {
 
       const match = email
         .toLowerCase()
-        .match(/^([^.]+)\.(\d{2})(ai)(\d{3})@sode-edu\.in$/);
+        .match(/^([^.]+)\.(\d{2})([a-z]{2})(\d{3})@sode-edu\.in$/);
 
-      if (!match) throw new Error("Use official SODE AIML email.");
+      if (!match) throw new Error("Use official SODE email.");
+
+      const name = match[1];
+      let yearSuffix = parseInt(match[2]);
+      const branch = match[3];
+      const rollNo = match[4];
+
+      let admissionYear = parseInt("20" + yearSuffix);
+
+      // Diploma students: roll starts with 4
+      if (rollNo.startsWith("4")) {
+        admissionYear -= 1;
+      }
 
       const details = {
         uid: u.uid,
-        name: match[1],
-        admissionYear: parseInt("20" + match[2]),
-        dept: "AIML",
-        rollNo: match[4],
+        name,
+        admissionYear,
+        dept: branch.toUpperCase(),
+        rollNo,
         email,
         updatedAt: serverTimestamp(),
       };
