@@ -487,13 +487,22 @@ export function UnifiedElectionPage() {
                 ))}
               </div>
 
-              <Button
-                onClick={submitVote}
-                disabled={submitting}
-                className="w-full bg-cyan-600 text-black hover:bg-cyan-500"
-              >
-                {submitting ? "Submitting..." : "Confirm Vote"}
-              </Button>
+              <div className="flex gap-3">
+                <Button
+                  variant="outline"
+                  onClick={() => setStep(roles.length - 1)}
+                  className="flex-1"
+                >
+                  Back
+                </Button>
+                <Button
+                  onClick={submitVote}
+                  disabled={submitting}
+                  className="flex-1 bg-cyan-600 text-black hover:bg-cyan-500"
+                >
+                  {submitting ? "Submitting..." : "Confirm Vote"}
+                </Button>
+              </div>
             </>
           )}
         </div>

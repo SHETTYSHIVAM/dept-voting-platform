@@ -6,6 +6,7 @@ export async function requireAdmin(req: NextRequest) {
   if (!token) throw Object.assign(new Error("Unauthorized"), { status: 401 });
   const decoded = await admin.auth().verifyIdToken(token);
   const snap = await db.collection("users").doc(decoded.uid).get();
+  console.log(snap.data());
   if (!snap.exists || snap.data()?.role !== "admin") {
     throw Object.assign(new Error("Forbidden"), { status: 403 });
   }

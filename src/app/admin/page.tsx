@@ -4,7 +4,6 @@ import { useRouter } from "next/navigation";
 import { auth } from "@/lib/firebase/firebase";
 import { onAuthStateChanged, User } from "firebase/auth";
 import { Toaster, toast } from "react-hot-toast";
-import { isAdmin } from "@/lib/admin-utils";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 type Candidate = { id: string; name: string; usn: string; bio?: string; voteCount?: number };
@@ -170,51 +169,46 @@ export default function AdminPage() {
 
   const [results, setResults] = useState<Position[]>([]);
   const [selectedResultElectionId, setSelectedResultElectionId] = useState<string>("");
-  const [facultyInput, setFacultyInput] = useState("");
-  const [facultyStatus, setFacultyStatus] = useState<{ totalVoters: number; votedCount: number; pendingCount: number } | null>(null);
-  const [showFacultyForm, setShowFacultyForm] = useState(false);
 
   const { confirm, dialog: confirmDialog } = useConfirm();
 
-const router = useRouter();
+  const router = useRouter();
 
-useEffect(() => {
-  return onAuthStateChanged(auth, async (u) => {
-    setUser(u);
+  useEffect(() => {
+    return onAuthStateChanged(auth, async (u) => {
+      setUser(u);
 
-    if (!u) {
+      if (!u) {
+        setAuthLoading(false);
+        return;
+      }
+
+      const token = await u.getIdToken();
+      setIdToken(token);
+
+      try {
+        const res = await fetch("/api/admin/check", {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+
+        const data = await res.json();
+        setIsAdminUser(data.isAdmin);
+        setAdminChecked(true);
+      } catch {
+        setIsAdminUser(false);
+        setAdminChecked(true);
+      }
+
       setAuthLoading(false);
-      return;
+    });
+  }, []);
+
+  useEffect(() => {
+    if (adminChecked && !isAdminUser) {
+      toast.error("Not authorised", { duration: 2000 });
+      router.push("/");
     }
-
-    const token = await u.getIdToken();
-    setIdToken(token);
-
-    try {
-      const res = await fetch("/api/admin/check", {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      });
-
-      const data = await res.json();
-      setIsAdminUser(data.isAdmin);
-      setAdminChecked(true);
-    } catch {
-      setIsAdminUser(false);
-      setAdminChecked(true);
-    }
-
-    setAuthLoading(false);
-  });
-}, []);
-
-useEffect(() => {
-  if (adminChecked && !isAdminUser) {
-    toast.error("Not authorised", { duration: 2000 });
-    router.push("/");
-  }
-}, [adminChecked, isAdminUser, router]);
+  }, [adminChecked, isAdminUser, router]);
 
   const hdr = useCallback(() => ({
     "Content-Type": "application/json",
@@ -252,10 +246,10 @@ useEffect(() => {
     if (eForm.eligibleAdmissionYears.length === 0) {
       toast.error("Select at least one eligible admission year"); return;
     }
-    
+
     confirm({
       title: editingElection ? "Update Election" : "Create Election",
-      message: editingElection 
+      message: editingElection
         ? `Save changes to "${eForm.title}"?`
         : `Create election "${eForm.title}"?\n\nStart: ${fmt(fromInputVal(eForm.votingStartsAt))}\nEnd: ${fmt(fromInputVal(eForm.votingEndsAt))}`,
       confirmLabel: editingElection ? "Update" : "Create",
@@ -301,9 +295,7 @@ useEffect(() => {
   };
 
   const updateStatus = (id: string, action: "start" | "end" | "publish", electionTitle: string, election?: Election) => {
-    // Check if voting can start
     if (action === "start" && election) {
-      // If positions aren't loaded, fetch the full election first
       if (!election.positions) {
         setLoading(true);
         fetch(`/api/admin/elections/${id}`, { headers: hdr() })
@@ -312,12 +304,12 @@ useEffect(() => {
             const fullElection = d.election;
             const hasPositions = fullElection.positions && fullElection.positions.length > 0;
             const hasAllCandidates = fullElection.positions?.every((pos: Position) => pos.candidates && pos.candidates.length > 0) ?? false;
-            
+
             if (!hasPositions || !hasAllCandidates) {
               const missingInfo = [];
               if (!hasPositions) missingInfo.push("No positions configured");
               else if (!hasAllCandidates) missingInfo.push("Some positions have no candidates");
-              
+
               confirm({
                 title: "Cannot Start Voting",
                 message: `⚠ The following must be completed before starting:\n\n${missingInfo.map(m => `• ${m}`).join("\n")}`,
@@ -327,8 +319,7 @@ useEffect(() => {
               setLoading(false);
               return;
             }
-            
-            // Positions and candidates are valid, proceed with status update
+
             proceedWithStatusUpdate(id, action, electionTitle);
           })
           .catch(() => {
@@ -337,15 +328,15 @@ useEffect(() => {
           });
         return;
       }
-      
+
       const hasPositions = election.positions && election.positions.length > 0;
       const hasAllCandidates = election.positions?.every(pos => pos.candidates && pos.candidates.length > 0) ?? false;
-      
+
       if (!hasPositions || !hasAllCandidates) {
         const missingInfo = [];
         if (!hasPositions) missingInfo.push("No positions configured");
         else if (!hasAllCandidates) missingInfo.push("Some positions have no candidates");
-        
+
         confirm({
           title: "Cannot Start Voting",
           message: `⚠ The following must be completed before starting:\n\n${missingInfo.map(m => `• ${m}`).join("\n")}`,
@@ -451,7 +442,6 @@ useEffect(() => {
       if (!r.ok) throw new Error((await r.json()).error);
       toast.success(editingCandidate ? "Candidate updated" : "Candidate added");
       setCForm({ name: "", usn: "", bio: "" }); setEditingCandidate(null);
-      // Refresh election data while preserving current position selection
       const freshData = await fetch(`/api/admin/elections/${selectedElection.id}`, { headers: hdr() }).then(r => r.json());
       setSelectedElection(freshData.election);
     } catch (e: any) { toast.error(e.message); }
@@ -472,7 +462,6 @@ useEffect(() => {
             method: "DELETE", headers: hdr()
           });
           toast.success("Removed");
-          // Refresh election data while preserving current position selection
           const freshData = await fetch(`/api/admin/elections/${selectedElection.id}`, { headers: hdr() }).then(r => r.json());
           setSelectedElection(freshData.election);
         } catch { toast.error("Delete failed"); }
@@ -488,85 +477,9 @@ useEffect(() => {
       const d = await r.json();
       setResults(d.positions ?? []);
       setSelectedResultElectionId(electionId);
-      setFacultyStatus(null);
-      setShowFacultyForm(false);
       setTab("results");
-      // Fetch faculty voting status
-      fetchFacultyStatus(electionId);
     } catch { toast.error("Failed to load results"); }
     finally { setLoading(false); }
-  };
-
-  const fetchFacultyStatus = async (electionId: string) => {
-    try {
-      const r = await fetch(`/api/admin/elections/${electionId}/faculty`, { headers: hdr() });
-      if (r.ok) {
-        const d = await r.json();
-        setFacultyStatus(d);
-      }
-    } catch {
-      // Faculty voting may not be set up yet
-    }
-  };
-
-  const detectTiedPositions = () => {
-    const tied: Array<{ id: string; title: string }> = [];
-    results.forEach(pos => {
-      if (pos.candidates.length <= 1) return; // Uncontested
-      const sorted = [...pos.candidates].sort((a, b) => (b.voteCount ?? 0) - (a.voteCount ?? 0));
-      const topVote = sorted[0].voteCount ?? 0;
-      const tiedCandidates = sorted.filter(c => c.voteCount === topVote);
-      if (tiedCandidates.length > 1) {
-        tied.push({ id: pos.id, title: pos.title });
-      }
-    });
-    return tied;
-  };
-
-  const addFacultyVoters = async (electionId: string) => {
-    if (!facultyInput.trim()) {
-      toast.error("Enter faculty emails (comma or line separated)");
-      return;
-    }
-
-    const tiedPositions = detectTiedPositions();
-    if (tiedPositions.length === 0) {
-      toast.error("No tied positions detected");
-      return;
-    }
-
-    const emails = facultyInput
-      .split(/[,\n]/)
-      .map(e => e.trim())
-      .filter(e => e.length > 0);
-
-    if (emails.length === 0) {
-      toast.error("No valid emails");
-      return;
-    }
-
-    setLoading(true);
-    try {
-      const r = await fetch(`/api/admin/elections/${electionId}/faculty`, {
-        method: "POST",
-        headers: hdr(),
-        body: JSON.stringify({
-          facultyEmails: emails,
-          tiedPositionIds: tiedPositions.map(p => p.id),
-        }),
-      });
-
-      if (!r.ok) throw new Error((await r.json()).error);
-      
-      toast.success(`${emails.length} faculty voters added`);
-      setFacultyInput("");
-      setShowFacultyForm(false);
-      fetchFacultyStatus(electionId);
-    } catch (e: any) {
-      toast.error(e.message);
-    } finally {
-      setLoading(false);
-    }
   };
 
   if (authLoading) return (
@@ -916,81 +829,6 @@ useEffect(() => {
 
             {results.length > 0 && (
               <div className="space-y-4">
-                {/* Tie Detection & Faculty Voting */}
-                {(() => {
-                  const tiedPositions = detectTiedPositions();
-                  return tiedPositions.length > 0 ? (
-                    <Section title="🔀 Tied Positions Detected">
-                      <div className="space-y-4">
-                        <div className="bg-amber-950/30 border border-amber-900/40 rounded-lg p-4">
-                          <p className="text-amber-100 text-sm font-semibold mb-2">
-                            {tiedPositions.length} position{tiedPositions.length !== 1 ? "s" : ""} have tied votes
-                          </p>
-                          <p className="text-amber-100/70 text-xs mb-3">
-                            {tiedPositions.map(p => p.title).join(", ")}
-                          </p>
-                          
-                          {!facultyStatus || facultyStatus.totalVoters === 0 ? (
-                            <div className="space-y-3">
-                              {!showFacultyForm ? (
-                                <Btn onClick={() => setShowFacultyForm(true)} sm gold>
-                                  + Add Faculty Voters
-                                </Btn>
-                              ) : (
-                                <div className="space-y-3">
-                                  <textarea
-                                    value={facultyInput}
-                                    onChange={e => setFacultyInput(e.target.value)}
-                                    placeholder="Enter faculty emails (comma or line separated)&#10;faculty1@domain.com&#10;faculty2@domain.com"
-                                    rows={3}
-                                    className={`${inputCls} resize-none`}
-                                  />
-                                  <div className="flex gap-2">
-                                    <Btn
-                                      onClick={() => addFacultyVoters(selectedResultElectionId)}
-                                      loading={loading}
-                                      sm
-                                      gold
-                                    >
-                                      Send Voting Links
-                                    </Btn>
-                                    <Btn onClick={() => { setShowFacultyForm(false); setFacultyInput(""); }} sm>
-                                      Cancel
-                                    </Btn>
-                                  </div>
-                                </div>
-                              )}
-                            </div>
-                          ) : (
-                            <div className="space-y-2">
-                              <div className="grid grid-cols-3 gap-2 text-center">
-                                <div>
-                                  <p className="text-2xl font-black text-amber-200">{facultyStatus.totalVoters}</p>
-                                  <p className="text-xs text-amber-100/60">Total</p>
-                                </div>
-                                <div>
-                                  <p className="text-2xl font-black text-emerald-400">{facultyStatus.votedCount}</p>
-                                  <p className="text-xs text-amber-100/60">Voted</p>
-                                </div>
-                                <div>
-                                  <p className="text-2xl font-black text-orange-400">{facultyStatus.pendingCount}</p>
-                                  <p className="text-xs text-amber-100/60">Pending</p>
-                                </div>
-                              </div>
-                              <p className="text-xs text-amber-100/70 text-center mt-2">
-                                {facultyStatus.votedCount === facultyStatus.totalVoters
-                                  ? "✓ All faculty have voted"
-                                  : `Waiting for ${facultyStatus.pendingCount} faculty voter${facultyStatus.pendingCount !== 1 ? "s" : ""}`}
-                              </p>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    </Section>
-                  ) : null;
-                })()}
-
-                {/* Results Display */}
                 {results.map(pos => {
                   const total = pos.candidates.reduce((s, c) => s + (c.voteCount ?? 0), 0);
                   const sorted = [...pos.candidates].sort((a, b) => (b.voteCount ?? 0) - (a.voteCount ?? 0));
@@ -1060,7 +898,6 @@ function ElectionCard({ el, onEdit, onDelete, onManage, onStart, onEnd, onPublis
           <p className="text-slate-500 font-mono text-xs mt-0.5">
             {fmt(el.votingStartsAt)} → {fmt(el.votingEndsAt)}
           </p>
-          {/* Eligible admission years badge row */}
           {el.eligibleAdmissionYears && el.eligibleAdmissionYears.length > 0 && (
             <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
               <span className="text-slate-600 font-mono text-[10px]">Eligible batches:</span>
