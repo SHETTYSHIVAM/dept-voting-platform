@@ -144,48 +144,115 @@ export function UnifiedElectionPage() {
 
   /* ── Login ── */
 
-  const handleGoogleLogin = async () => {
-    setLoading(true);
+  // const handleGoogleLogin = async () => {
+  //   setLoading(true);
 
-    try {
-      const u = await loginWithGoogle();
-      const email = u.email || "";
+  //   try {
+  //     const u = await loginWithGoogle();
+  //     const email = u.email || "";
 
-      const match = email
-        .toLowerCase()
-        .match(/^([^.]+)\.(\d{2})([a-z]{2})(\d{3})@sode-edu\.in$/);
+  //     const match = email
+  //       .toLowerCase()
+  //       .match(/^([^.]+)\.(\d{2})([a-z]{2})(\d{3})@sode-edu\.in$/);
 
-      if (!match) throw new Error("Use official SODE email.");
+  //     if (!match) throw new Error("Use official SODE email.");
 
-      const name = match[1];
-      let yearSuffix = parseInt(match[2]);
-      const branch = match[3];
-      const rollNo = match[4];
+  //     const name = match[1];
+  //     let yearSuffix = parseInt(match[2]);
+  //     const branch = match[3];
+  //     const rollNo = match[4];
 
-      let admissionYear = parseInt("20" + yearSuffix);
+  //     let admissionYear = parseInt("20" + yearSuffix);
 
-      // Diploma students: roll starts with 4
-      if (rollNo.startsWith("4")) {
-        admissionYear -= 1;
-      }
+  //     // Diploma students: roll starts with 4
+  //     if (rollNo.startsWith("4")) {
+  //       admissionYear -= 1;
+  //     }
 
-      const details = {
-        uid: u.uid,
-        name,
-        admissionYear,
-        dept: branch.toUpperCase(),
-        rollNo,
-        email,
-        updatedAt: serverTimestamp(),
-      };
+  //     const details = {
+  //       uid: u.uid,
+  //       name,
+  //       admissionYear,
+  //       dept: branch.toUpperCase(),
+  //       rollNo,
+  //       email,
+  //       updatedAt: serverTimestamp(),
+  //     };
 
-      await setDoc(doc(db, "users", u.uid), details, { merge: true });
-    } catch (e: any) {
-      toast.error(e.message);
+  //     await setDoc(doc(db, "users", u.uid), details, { merge: true });
+  //   } catch (e: any) {
+  //     toast.error(e.message);
+  //   }
+
+  //   setLoading(false);
+  // };
+
+const handleGoogleLogin = async () => {
+  setLoading(true);
+
+  try {
+    const u = await loginWithGoogle();
+    const email = (u.email || "").toLowerCase();
+
+    let name = "";
+    let admissionYear = 0;
+    let dept = "";
+    let rollNo = "";
+    let studentType = "regular";
+
+    // Regular students
+    const regularMatch = email.match(
+      /^([^.]+)\.(\d{2})([a-z]{2})(\d{3})@sode-edu\.in$/
+    );
+
+    // Diploma students
+    const diplomaMatch = email.match(
+      /^([^.]+)\.(\d{2})([a-z]{2})dip(\d{2})@sode-edu\.in$/
+    );
+
+    if (regularMatch) {
+      name = regularMatch[1];
+      admissionYear = parseInt("20" + regularMatch[2]);
+      dept = regularMatch[3].toUpperCase();
+      rollNo = regularMatch[4];
     }
 
-    setLoading(false);
-  };
+    else if (diplomaMatch) {
+      name = diplomaMatch[1];
+      admissionYear = parseInt("20" + diplomaMatch[2]) - 1; // diploma correction
+      dept = diplomaMatch[3].toUpperCase();
+      rollNo = diplomaMatch[4];
+      studentType = "diploma";
+    }
+
+    else {
+      throw new Error("Use official SODE email.");
+    }
+
+    // Allow only AI / ML students
+    if (dept !== "AI" && dept !== "ML") {
+      throw new Error("Only AI & ML students are allowed.");
+    }
+
+    const details = {
+      uid: u.uid,
+      name,
+      admissionYear,
+      dept,
+      rollNo,
+      studentType,
+      email,
+      updatedAt: serverTimestamp(),
+    };
+
+    await setDoc(doc(db, "users", u.uid), details, { merge: true });
+
+  } catch (e: any) {
+    toast.error(e.message);
+  }
+
+  setLoading(false);
+};
 
   /* ── Select Election ── */
 
